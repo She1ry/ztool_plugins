@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
+  "name": "ocrs",
+  "title": "截图 OCR 识别",
+  "description": "使用 PaddleOCR.js 识别截图中的中文文字",
+  "author": "She1ry",
+  "version": "1.0.0",
+  "main": "index.html",
+  "logo": "logo.png",
+  "development": {
+    "main": "http://localhost:5173"
+  },
+  "features": [
+    {
+      "code": "ocr",
+      "explain": "截图 OCR 识别",
+      "icon": "logo.png",
+      "mainHide": true,
+      "cmds": ["ocr", "截图识别", "文字识别"]
+    }
+  ]
+}
