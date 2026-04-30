@@ -1,25 +1,9 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolve, join } from 'path'
-import { existsSync, unlinkSync, readdirSync } from 'fs'
-
-function removeUnusedAssets() {
-  return {
-    name: 'remove-unused-assets',
-    closeBundle() {
-      const assetsDir = join(__dirname, 'dist', 'assets')
-      if (!existsSync(assetsDir)) return
-      for (const file of readdirSync(assetsDir)) {
-        if (file.startsWith('worker-entry-')) {
-          unlinkSync(join(assetsDir, file))
-        }
-      }
-    }
-  }
-}
+import { resolve } from 'path'
 
 export default defineConfig({
-  plugins: [vue(), removeUnusedAssets()],
+  plugins: [vue()],
   base: './',
   resolve: {
     alias: {

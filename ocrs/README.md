@@ -69,7 +69,7 @@ npm run build
 
 - 截图能力使用 ZTools 类型定义中确认的 `window.ztools.screenCapture(callback)`，返回值按 base64 图片处理。
 - 主窗口隐藏使用 `mainHide: true` 和 `window.ztools.hideMainWindow()` 双重处理，截图回调后调用 `window.ztools.showMainWindow()` 展示结果。
-- OCR SDK 使用 `PaddleOCR.create({ worker: true, lang: 'ch', ocrVersion: 'PP-OCRv5', ortOptions: { backend: 'wasm' } })`。
+- OCR SDK 使用 `PaddleOCR.create({ worker: true, lang: 'ch', ocrVersion: 'PP-OCRv5', ortOptions: { backend: 'wasm' } })`，推理在 Web Worker 中执行，不阻塞主线程。
 - OCR 实例通过模块级 Promise 缓存，避免每次重新进入功能都重复初始化模型。
 - 复制结果使用 `window.ztools.copyText()`，复制后通过 `window.ztools.showNotification()` 提示。
 

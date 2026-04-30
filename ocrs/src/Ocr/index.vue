@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PaddleOCR } from '@paddleocr/paddleocr-js'
 import type { OcrResult } from '@paddleocr/paddleocr-js'
+import { getOcr, disposeOcr } from './ocr-instance'
 
-type OcrStatus = 'idle' | 'capturing' | 'loading-model' | 'recognizing' | 'success' | 'error'
-type OcrRunner = Awaited<ReturnType<typeof PaddleOCR.create>>
+type OcrStatus = 'idle' | 'capturing' | 'loading-model' | 'recognizing' | 'success' | 'error' | 'cancelled'
 
 const props = defineProps({
   enterAction: {
@@ -13,7 +12,6 @@ const props = defineProps({
   }
 })
 
-let ocrPromise: Promise<OcrRunner> | undefined
 let runId = 0
 
 const status = ref<OcrStatus>('idle')
@@ -23,6 +21,7 @@ const recognizedText = ref('')
 const elapsedMs = ref(0)
 const itemCount = ref(0)
 const averageScore = ref(0)
+const progress = ref(0)
 
 const isBusy = computed(() => ['capturing', 'loading-model', 'recognizing'].includes(status.value))
 const statusTitle = computed(() => {
@@ -32,7 +31,8 @@ const statusTitle = computed(() => {
     'loading-model': '正在加载 OCR 模型',
     recognizing: '正在识别文字',
     success: '识别完成',
-    error: '识别失败'
+    error: '识别失败',
+    cancelled: '截图 OCR 识别'
   }
   return titles[status.value]
 })
@@ -40,20 +40,6 @@ const confidenceText = computed(() => {
   if (!itemCount.value) return '无文字结果'
   return `${Math.round(averageScore.value * 100)}%`
 })
-
-function getOcr() {
-  if (!ocrPromise) {
-    ocrPromise = PaddleOCR.create({
-      worker: false,
-      lang: 'ch',
-      ocrVersion: 'PP-OCRv5',
-      ortOptions: {
-        backend: 'wasm'
-      }
-    })
-  }
-  return ocrPromise
-}
 
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -83,11 +69,49 @@ function normalizeScreenshotToBlob(imgBase64: string) {
   const mimeMatch = header.match(/^data:([^;]+);base64$/)
   const mime = mimeMatch?.[1] || 'image/png'
   const binary = window.atob(data)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return new Blob([bytes], { type: mime })
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new Blob([bytes.buffer], { type: mime })
+}
+
+const MAX_EDGE = 1280
+
+function resizeImage(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { width, height } = img
+      if (width <= MAX_EDGE && height <= MAX_EDGE) {
+        resolve(blob)
+        return
+      }
+      const scale = MAX_EDGE / Math.max(width, height)
+      const targetW = Math.round(width * scale)
+      const targetH = Math.round(height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = targetW
+      canvas.height = targetH
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('无法创建 canvas 上下文'))
+        return
+      }
+      ctx.drawImage(img, 0, 0, targetW, targetH)
+      canvas.toBlob((resized) => {
+        if (resized) {
+          resolve(resized)
+        } else {
+          reject(new Error('图片缩放失败'))
+        }
+      }, 'image/png')
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('图片加载失败'))
+    }
+    img.src = url
+  })
 }
 
 function summarizeResult(result: OcrResult) {
@@ -100,6 +124,30 @@ function summarizeResult(result: OcrResult) {
   elapsedMs.value = result.metrics?.totalMs || 0
 }
 
+function classifyError(error: unknown): { status: OcrStatus; message: string } {
+  const msg = error instanceof Error ? error.message : String(error)
+  if (msg === '已取消截图') {
+    return { status: 'cancelled', message: '截图已取消。' }
+  }
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('Failed to fetch')) {
+    return { status: 'error', message: '网络异常，请检查网络后重试。' }
+  }
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return { status: 'error', message: '识别超时，请重新截图后重试。' }
+  }
+  return { status: 'error', message: '识别过程中出现错误，可重新截图尝试。' }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val) },
+      (err) => { clearTimeout(timer); reject(err) }
+    )
+  })
+}
+
 async function startOcr() {
   const currentRun = ++runId
   status.value = 'capturing'
@@ -109,26 +157,31 @@ async function startOcr() {
   elapsedMs.value = 0
   itemCount.value = 0
   averageScore.value = 0
+  progress.value = 0
 
   try {
     window.ztools.hideMainWindow()
     await wait(180)
 
-    const imgBase64 = await captureScreen()
+    let imgBase64: string | null = await captureScreen()
     if (currentRun !== runId) return
 
-    const image = normalizeScreenshotToBlob(imgBase64)
+    const rawBlob = normalizeScreenshotToBlob(imgBase64)
+    imgBase64 = null
+    const image = await resizeImage(rawBlob)
     window.ztools.showMainWindow()
 
     status.value = 'loading-model'
-    message.value = '首次加载模型需要较长时间，并可能需要联网下载模型资源。'
-    const ocr = await getOcr()
+    message.value = '正在加载 OCR 模型，首次使用可能需要联网下载。'
+    progress.value = 10
+    const ocr = await withTimeout(getOcr(), 120000)
     if (currentRun !== runId) return
 
     status.value = 'recognizing'
     message.value = '正在分析截图中的文字。'
+    progress.value = 50
     const startedAt = performance.now()
-    const results = await ocr.predict(image)
+    const results = await withTimeout(ocr.predict(image), 60000)
     if (currentRun !== runId) return
 
     const result = results[0]
@@ -140,13 +193,17 @@ async function startOcr() {
     if (!elapsedMs.value) {
       elapsedMs.value = Math.round(performance.now() - startedAt)
     }
+    progress.value = 100
     status.value = 'success'
     message.value = recognizedText.value ? '识别结果如下。' : '未识别到文字，可重新截图尝试。'
   } catch (error) {
     window.ztools.showMainWindow()
-    status.value = 'error'
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-    message.value = errorMessage.value === '已取消截图' ? '截图已取消。' : '识别过程中出现错误。'
+    const classified = classifyError(error)
+    status.value = classified.status
+    message.value = classified.message
+    if (classified.status === 'error') {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    }
   }
 }
 
@@ -181,8 +238,8 @@ watch(
       <p class="message">{{ message }}</p>
       <p v-if="errorMessage && status === 'error'" class="error">{{ errorMessage }}</p>
 
-      <div v-if="isBusy" class="progress" aria-label="处理中">
-        <span></span>
+      <div v-if="isBusy" class="progress" :class="{ determinate: progress > 0 }" aria-label="处理中">
+        <span :style="progress > 0 ? { width: progress + '%', animation: 'none' } : undefined"></span>
       </div>
 
       <div v-if="status === 'success'" class="stats">
@@ -271,6 +328,11 @@ h1 {
   color: #16a34a;
 }
 
+.status-pill.cancelled {
+  background: rgba(107, 114, 128, 0.14);
+  color: #6b7280;
+}
+
 .message {
   margin: 20px 0 0;
   line-height: 1.7;
@@ -299,6 +361,11 @@ h1 {
   border-radius: inherit;
   background: var(--blue);
   animation: progress 1.2s ease-in-out infinite;
+}
+
+.progress.determinate span {
+  transition: width 0.3s ease;
+  animation: none;
 }
 
 .stats {
