@@ -7,4 +7,10 @@ declare module '*.vue' {
   export default component
 }
 
+declare global {
+  interface Window {
+    snipasteSaveImage(base64: string, filePath: string): boolean
+  }
+}
+
 export {}

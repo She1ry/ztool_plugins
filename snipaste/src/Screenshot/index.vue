@@ -82,11 +82,18 @@ async function startScreenshot() {
 
 function saveImage() {
   if (!imgBase64.value) return
-  window.ztools.showSaveDialog({
+  const filePath = window.ztools.showSaveDialog({
     title: '保存截图',
     defaultPath: `screenshot_${Date.now()}.png`,
     filters: [{ name: 'PNG 图片', extensions: ['png'] }, { name: 'JPEG 图片', extensions: ['jpg'] }]
   })
+  if (!filePath) return
+  const ok = window.snipasteSaveImage(imgBase64.value, filePath)
+  if (ok) {
+    window.ztools.showNotification('截图已保存', '截图贴图')
+  } else {
+    window.ztools.showNotification('保存失败', '截图贴图')
+  }
 }
 
 function copyImage() {
