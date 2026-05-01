@@ -4,20 +4,26 @@
 
 ## 项目结构
 - `src/main.ts` → `src/App.vue` → `src/Ocr/index.vue`
-- `src/Ocr/ocr-instance.ts` 管理 OCR 实例生命周期（getOcr / disposeOcr）
-- `src/Ocr/index.vue` — 截图、缩放、识别、结果展示
+- `src/Ocr/api-config.ts` — API 配置类型 + localStorage 持久化
+- `src/Ocr/Settings.vue` — API Key / Endpoint 设置页
+- `src/Ocr/index.vue` — 截图、远程 API 调用、结果展示
 - `specs/` — 改动 spec 文档
 
 ## 关键配置
 - `public/plugin.json` — 触发关键词：`ocr`、`截图识别`、`文字识别`，`mainHide: true`
-- `vite.config.js` — `base: './'`，manualChunks 分割 opencv/ort/paddleocr
-- OCR: PP-OCRv5 中文，ONNX Runtime WASM，worker 模式
+- `vite.config.js` — `base: './'`，无特殊 chunk 分割
+- OCR: 远程 API（aistudio layout-parsing），用户自定义 endpoint + apiKey
 
-## ZTools/OCR Gotchas
+## API 配置
+- 存储 key: `ocrs_api_config`（localStorage）
+- 默认端点: `https://ibv5fbv9z3i8vd68.aistudio-app.com/layout-parsing`
+- 请求格式: POST `{endpoint}`，Header `Authorization: token {apiKey}`
+- 响应解析: `result.layoutParsingResults[0].markdown.text`
+
+## ZTools Gotchas
 - 截图流程：`mainHide: true` → `hideMainWindow()` → 延迟 → `screenCapture()` → `showMainWindow()`
 - `window.ztools.screenCapture(callback)` 返回 base64 图片
-- `patches/@paddleocr+paddleocr-js+0.3.2.patch` 移除了 `file://` 来源限制
-- 首次使用需联网下载模型资源；如 404 可配置 `wasmPaths` 或自托管
+- 截图取消时界面展示取消状态，可点击"重新截图"再次识别
 
 ## TypeScript/Style
 - `strict: false`，`noImplicitAny: false`（历史遗留，新代码应自行严格）

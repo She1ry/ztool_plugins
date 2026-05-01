@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { OcrResult } from '@paddleocr/paddleocr-js'
-import { getOcr, disposeOcr } from './ocr-instance'
+import { loadConfig } from './api-config'
+import Settings from './Settings.vue'
 
-type OcrStatus = 'idle' | 'capturing' | 'loading-model' | 'recognizing' | 'success' | 'error' | 'cancelled'
+type OcrStatus = 'idle' | 'capturing' | 'recognizing' | 'success' | 'error' | 'cancelled'
 
 const props = defineProps({
   enterAction: {
@@ -19,26 +19,21 @@ const message = ref('准备截图识别')
 const errorMessage = ref('')
 const recognizedText = ref('')
 const elapsedMs = ref(0)
-const itemCount = ref(0)
-const averageScore = ref(0)
 const progress = ref(0)
+const showSettings = ref(false)
 
-const isBusy = computed(() => ['capturing', 'loading-model', 'recognizing'].includes(status.value))
+const isBusy = computed(() => ['capturing', 'recognizing'].includes(status.value))
 const statusTitle = computed(() => {
+  if (showSettings.value) return 'API 设置'
   const titles: Record<OcrStatus, string> = {
     idle: '截图 OCR 识别',
     capturing: '正在截图',
-    'loading-model': '正在加载 OCR 模型',
     recognizing: '正在识别文字',
     success: '识别完成',
     error: '识别失败',
     cancelled: '截图 OCR 识别'
   }
   return titles[status.value]
-})
-const confidenceText = computed(() => {
-  if (!itemCount.value) return '无文字结果'
-  return `${Math.round(averageScore.value * 100)}%`
 })
 
 function wait(ms: number) {
@@ -55,79 +50,71 @@ function captureScreen() {
   })
 }
 
-function normalizeScreenshotToBlob(imgBase64: string) {
-  if (!imgBase64) {
-    throw new Error('已取消截图')
+function extractBase64(imgBase64: string): string {
+  if (imgBase64.startsWith('data:')) {
+    const commaIndex = imgBase64.indexOf(',')
+    return commaIndex >= 0 ? imgBase64.slice(commaIndex + 1) : imgBase64
   }
-
-  const dataUrl = imgBase64.startsWith('data:') ? imgBase64 : `data:image/png;base64,${imgBase64}`
-  const [header, data] = dataUrl.split(',')
-  if (!data) {
-    throw new Error('截图数据格式不正确')
-  }
-
-  const mimeMatch = header.match(/^data:([^;]+);base64$/)
-  const mime = mimeMatch?.[1] || 'image/png'
-  const binary = window.atob(data)
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
-  return new Blob([bytes.buffer], { type: mime })
+  return imgBase64
 }
 
-const MAX_EDGE = 1280
+interface ApiResponse {
+  result: {
+    layoutParsingResults: Array<{ markdown: { text: string } }>
+  }
+}
 
-function resizeImage(blob: Blob): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob)
-    const img = new Image()
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      const { width, height } = img
-      if (width <= MAX_EDGE && height <= MAX_EDGE) {
-        resolve(blob)
-        return
-      }
-      const scale = MAX_EDGE / Math.max(width, height)
-      const targetW = Math.round(width * scale)
-      const targetH = Math.round(height * scale)
-      const canvas = document.createElement('canvas')
-      canvas.width = targetW
-      canvas.height = targetH
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('无法创建 canvas 上下文'))
-        return
-      }
-      ctx.drawImage(img, 0, 0, targetW, targetH)
-      canvas.toBlob((resized) => {
-        if (resized) {
-          resolve(resized)
-        } else {
-          reject(new Error('图片缩放失败'))
-        }
-      }, 'image/png')
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('图片加载失败'))
-    }
-    img.src = url
+async function callOcrApi(base64Data: string): Promise<string> {
+  const config = loadConfig()
+  if (!config.apiKey) {
+    throw new Error('API_KEY_MISSING')
+  }
+
+  const payload = {
+    file: base64Data,
+    fileType: 1,
+    useDocOrientationClassify: false,
+    useDocUnwarping: false,
+    useChartRecognition: false
+  }
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `token ${config.apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   })
-}
 
-function summarizeResult(result: OcrResult) {
-  const items = result.items || []
-  itemCount.value = items.length
-  recognizedText.value = items.map((item) => item.text).join('\n')
-  averageScore.value = items.length
-    ? items.reduce((total, item) => total + item.score, 0) / items.length
-    : 0
-  elapsedMs.value = result.metrics?.totalMs || 0
+  if (!response.ok) {
+    throw new Error(`HTTP_${response.status}`)
+  }
+
+  const data = (await response.json()) as ApiResponse
+  const results = data?.result?.layoutParsingResults
+  if (!results || results.length === 0) {
+    throw new Error('EMPTY_RESULT')
+  }
+  return results[0].markdown.text
 }
 
 function classifyError(error: unknown): { status: OcrStatus; message: string } {
   const msg = error instanceof Error ? error.message : String(error)
   if (msg === '已取消截图') {
     return { status: 'cancelled', message: '截图已取消。' }
+  }
+  if (msg === 'API_KEY_MISSING') {
+    return { status: 'error', message: '请先配置 API Key。' }
+  }
+  if (msg === 'HTTP_401' || msg === 'HTTP_403') {
+    return { status: 'error', message: 'API Key 无效，请检查配置。' }
+  }
+  if (msg === 'HTTP_429') {
+    return { status: 'error', message: '请求过于频繁，请稍后再试。' }
+  }
+  if (msg === 'EMPTY_RESULT') {
+    return { status: 'error', message: 'API 未返回识别结果。' }
   }
   if (msg.includes('network') || msg.includes('fetch') || msg.includes('Failed to fetch')) {
     return { status: 'error', message: '网络异常，请检查网络后重试。' }
@@ -140,62 +127,57 @@ function classifyError(error: unknown): { status: OcrStatus; message: string } {
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    const timer = window.setTimeout(() => reject(new Error('timeout')), ms)
     promise.then(
-      (val) => { clearTimeout(timer); resolve(val) },
-      (err) => { clearTimeout(timer); reject(err) }
+      (val) => { window.clearTimeout(timer); resolve(val) },
+      (err) => { window.clearTimeout(timer); reject(err) }
     )
   })
 }
 
 async function startOcr() {
+  const config = loadConfig()
+  if (!config.apiKey) {
+    showSettings.value = true
+    return
+  }
+
   const currentRun = ++runId
   status.value = 'capturing'
   message.value = '请选择需要识别的屏幕区域。'
   errorMessage.value = ''
   recognizedText.value = ''
   elapsedMs.value = 0
-  itemCount.value = 0
-  averageScore.value = 0
   progress.value = 0
 
   try {
     window.ztools.hideMainWindow()
     await wait(180)
 
-    let imgBase64: string | null = await captureScreen()
+    const imgBase64 = await captureScreen()
     if (currentRun !== runId) return
 
-    const rawBlob = normalizeScreenshotToBlob(imgBase64)
-    imgBase64 = null
-    const image = await resizeImage(rawBlob)
+    if (!imgBase64) {
+      throw new Error('已取消截图')
+    }
+
     window.ztools.showMainWindow()
 
-    status.value = 'loading-model'
-    message.value = '正在加载 OCR 模型，首次使用可能需要联网下载。'
-    progress.value = 10
-    const ocr = await withTimeout(getOcr(), 120000)
-    if (currentRun !== runId) return
-
     status.value = 'recognizing'
-    message.value = '正在分析截图中的文字。'
-    progress.value = 50
+    message.value = '正在调用远程 API 识别文字。'
+    progress.value = 30
+
+    const base64Data = extractBase64(imgBase64)
     const startedAt = performance.now()
-    const results = await withTimeout(ocr.predict(image), 60000)
+
+    const text = await withTimeout(callOcrApi(base64Data), 60000)
     if (currentRun !== runId) return
 
-    const result = results[0]
-    if (!result) {
-      throw new Error('OCR 未返回识别结果')
-    }
-
-    summarizeResult(result)
-    if (!elapsedMs.value) {
-      elapsedMs.value = Math.round(performance.now() - startedAt)
-    }
+    recognizedText.value = text
+    elapsedMs.value = Math.round(performance.now() - startedAt)
     progress.value = 100
     status.value = 'success'
-    message.value = recognizedText.value ? '识别结果如下。' : '未识别到文字，可重新截图尝试。'
+    message.value = text ? '识别结果如下。' : '未识别到文字，可重新截图尝试。'
   } catch (error) {
     window.ztools.showMainWindow()
     const classified = classifyError(error)
@@ -213,10 +195,20 @@ function copyText() {
   window.ztools.showNotification('识别文本已复制', '截图 OCR 识别')
 }
 
+function openSettings() {
+  showSettings.value = true
+}
+
+function closeSettings() {
+  showSettings.value = false
+}
+
 watch(
   () => props.enterAction,
   () => {
-    startOcr()
+    if (!showSettings.value) {
+      startOcr()
+    }
   },
   {
     immediate: true
@@ -225,14 +217,24 @@ watch(
 </script>
 
 <template>
-  <main class="ocr-page">
+  <Settings v-if="showSettings" @close="closeSettings" />
+
+  <main v-else class="ocr-page">
     <section class="ocr-card">
       <div class="ocr-header">
         <div>
-          <p class="eyebrow">PaddleOCR.js</p>
+          <p class="eyebrow">Remote OCR</p>
           <h1>{{ statusTitle }}</h1>
         </div>
-        <span class="status-pill" :class="status">{{ status }}</span>
+        <div class="header-right">
+          <button type="button" class="icon-btn" title="API 设置" @click="openSettings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          </button>
+          <span class="status-pill" :class="status">{{ status }}</span>
+        </div>
       </div>
 
       <p class="message">{{ message }}</p>
@@ -243,14 +245,6 @@ watch(
       </div>
 
       <div v-if="status === 'success'" class="stats">
-        <div>
-          <strong>{{ itemCount }}</strong>
-          <span>文本块</span>
-        </div>
-        <div>
-          <strong>{{ confidenceText }}</strong>
-          <span>平均置信度</span>
-        </div>
         <div>
           <strong>{{ Math.round(elapsedMs) }}ms</strong>
           <span>识别耗时</span>
@@ -293,6 +287,32 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.icon-btn:hover {
+  background: rgba(88, 164, 246, 0.12);
+  color: var(--blue);
 }
 
 .eyebrow {
@@ -468,6 +488,10 @@ h1 {
 
   .result {
     background: rgba(31, 32, 36, 0.84);
+  }
+
+  .icon-btn {
+    color: #c4c7cc;
   }
 }
 </style>

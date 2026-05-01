@@ -2,9 +2,9 @@
   "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
   "name": "ocrs",
   "title": "截图 OCR 识别",
-  "description": "使用 PaddleOCR.js 识别截图中的中文文字",
+  "description": "使用远程 API 识别截图中的文字",
   "author": "She1ry",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "main": "index.html",
   "logo": "logo.png",
   "development": {
