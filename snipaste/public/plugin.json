@@ -4,7 +4,7 @@
   "title": "截图贴图",
   "description": "轻量化截图工具，支持截图后保存、批注、裁剪、复制，以及屏幕取色功能",
   "author": "snipaste",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "index.html",
   "preload": "preload.js",
   "logo": "logo.png",
