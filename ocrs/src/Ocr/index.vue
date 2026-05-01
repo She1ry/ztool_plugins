@@ -210,18 +210,31 @@ watch(
   <main v-else class="ocr-page">
     <section class="ocr-card">
       <div class="ocr-header">
-        <div>
+        <div class="header-left">
           <p class="eyebrow">Remote OCR</p>
           <h1>{{ statusTitle }}</h1>
+          <span class="status-pill" :class="status">{{ status }}</span>
         </div>
         <div class="header-right">
+          <button type="button" class="icon-btn" title="重新截图" :disabled="isBusy" @click="startOcr">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <button type="button" class="icon-btn" title="复制文本" :disabled="!recognizedText || isBusy" @click="copyText">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+          </button>
           <button type="button" class="icon-btn" title="API 设置" @click="openSettings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3" />
               <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
             </svg>
           </button>
-          <span class="status-pill" :class="status">{{ status }}</span>
         </div>
       </div>
 
@@ -233,10 +246,8 @@ watch(
       </div>
 
       <div v-if="status === 'success'" class="stats">
-        <div>
-          <strong>{{ elapsedMs }}ms</strong>
-          <span>识别耗时</span>
-        </div>
+        <strong>{{ elapsedMs }}ms</strong>
+        <span>识别耗时</span>
       </div>
 
       <textarea
@@ -245,28 +256,36 @@ watch(
         class="result"
         placeholder="未识别到文字"
       ></textarea>
-
-      <div class="actions">
-        <button type="button" :disabled="isBusy" @click="startOcr">重新截图</button>
-        <button type="button" :disabled="!recognizedText || isBusy" @click="copyText">复制文本</button>
-      </div>
     </section>
   </main>
 </template>
 
 <style scoped>
+.ocr-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+}
+
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -276,17 +295,22 @@ watch(
   transition: background 0.2s, color 0.2s;
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   background: rgba(88, 164, 246, 0.12);
   color: var(--blue);
 }
 
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .status-pill {
-  padding: 5px 10px;
+  padding: 3px 10px;
   border-radius: 999px;
   background: rgba(88, 164, 246, 0.14);
   color: var(--blue);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -306,16 +330,17 @@ watch(
 }
 
 .error {
-  margin: 12px 0 0;
-  padding: 12px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
   border-radius: 10px;
   background: rgba(220, 38, 38, 0.1);
   color: #dc2626;
+  font-size: 13px;
 }
 
 .progress {
-  height: 8px;
-  margin-top: 22px;
+  height: 6px;
+  margin-top: 14px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(88, 164, 246, 0.16);
@@ -336,38 +361,30 @@ watch(
 }
 
 .stats {
-  margin-top: 22px;
-}
-
-.stats div {
-  padding: 14px;
-  border-radius: 12px;
-  background: rgba(88, 164, 246, 0.1);
-}
-
-.stats strong,
-.stats span {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .stats strong {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .stats span {
-  margin-top: 6px;
   color: #667085;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .result {
+  flex: 1;
   width: 100%;
-  min-height: 260px;
+  min-height: 120px;
   box-sizing: border-box;
-  margin-top: 18px;
-  padding: 14px;
+  margin-top: 10px;
+  padding: 12px;
   border: 1px solid rgba(88, 164, 246, 0.25);
-  border-radius: 12px;
+  border-radius: 10px;
   resize: vertical;
   background: rgba(255, 255, 255, 0.72);
   color: inherit;
@@ -382,12 +399,6 @@ watch(
 
   100% {
     transform: translateX(250%);
-  }
-}
-
-@media (max-width: 640px) {
-  .stats {
-    grid-template-columns: 1fr;
   }
 }
 
