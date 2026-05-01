@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: OCR插件UI重设计
+
+**Date**: 2026-05-01
+**Task**: OCR插件UI重设计
+**Branch**: `main`
+
+### Summary
+
+重新设计OCR插件UI：将重新截图和复制文本按钮移至顶部header作为小图标，textarea自适应填充剩余空间，收紧间距和空白
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f626e2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
