@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { loadConfig, saveConfig, type ApiConfig } from './api-config'
+import './ocr-common.css'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -8,8 +9,23 @@ const emit = defineEmits<{
 
 const config = reactive<ApiConfig>(loadConfig())
 const saved = ref(false)
+const endpointError = ref('')
+
+function isValidUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 function handleSave() {
+  if (!isValidUrl(config.endpoint)) {
+    endpointError.value = '请输入有效的 HTTP/HTTPS URL'
+    return
+  }
+  endpointError.value = ''
   saveConfig({ ...config })
   saved.value = true
   window.setTimeout(() => {
@@ -36,7 +52,8 @@ function handleBack() {
 
       <div class="form-group">
         <label for="endpoint">API 端点</label>
-        <input id="endpoint" v-model.trim="config.endpoint" type="url" placeholder="https://..." />
+        <input id="endpoint" v-model.trim="config.endpoint" type="url" placeholder="https://..." :class="{ 'input-error': endpointError }" />
+        <p v-if="endpointError" field-error>{{ endpointError }}</p>
       </div>
 
       <div class="form-group">
@@ -54,47 +71,6 @@ function handleBack() {
 </template>
 
 <style scoped>
-.ocr-page {
-  min-height: 100vh;
-  box-sizing: border-box;
-  padding: 24px;
-}
-
-.ocr-card {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 24px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 48px rgba(22, 42, 80, 0.12);
-}
-
-.ocr-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  font-size: 28px;
-}
-
-.message {
-  margin: 20px 0 0;
-  line-height: 1.7;
-}
-
 .form-group {
   margin-top: 20px;
 }
@@ -125,17 +101,18 @@ h1 {
   border-color: var(--blue);
 }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 24px;
+.form-group input.input-error {
+  border-color: #dc2626;
 }
 
-.actions button {
-  min-width: 108px;
-  padding: 0 18px;
-  border-radius: 10px;
+p[field-error] {
+  margin: 6px 0 0;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.actions {
+  margin-top: 24px;
 }
 
 .actions button.btn-secondary {
@@ -149,11 +126,6 @@ h1 {
 }
 
 @media (prefers-color-scheme: dark) {
-  .ocr-card {
-    background: rgba(43, 45, 49, 0.94);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
-  }
-
   .form-group label {
     color: #c4c7cc;
   }

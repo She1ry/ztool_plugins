@@ -4,7 +4,7 @@
   "title": "截图 OCR 识别",
   "description": "使用远程 API 识别截图中的文字",
   "author": "She1ry",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "main": "index.html",
   "logo": "logo.png",
   "development": {

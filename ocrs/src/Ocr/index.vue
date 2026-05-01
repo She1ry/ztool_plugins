@@ -2,6 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import { loadConfig } from './api-config'
 import Settings from './Settings.vue'
+import './ocr-common.css'
+
+const OCR_TIMEOUT_MS = 60000
+const HIDE_WINDOW_ANIMATION_MS = 180
 
 type OcrStatus = 'idle' | 'capturing' | 'recognizing' | 'success' | 'error' | 'cancelled'
 
@@ -40,13 +44,9 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function captureScreen() {
-  return new Promise<string>((resolve, reject) => {
-    try {
-      window.ztools.screenCapture((imgBase64) => resolve(imgBase64))
-    } catch (error) {
-      reject(error)
-    }
+function captureScreen(): Promise<string> {
+  return new Promise((resolve) => {
+    window.ztools.screenCapture((imgBase64) => resolve(imgBase64))
   })
 }
 
@@ -59,16 +59,13 @@ function extractBase64(imgBase64: string): string {
 }
 
 interface ApiResponse {
-  result: {
-    layoutParsingResults: Array<{ markdown: { text: string } }>
+  result?: {
+    layoutParsingResults?: Array<{ markdown: { text: string } }>
   }
 }
 
-async function callOcrApi(base64Data: string): Promise<string> {
+async function callOcrApi(base64Data: string, signal: AbortSignal): Promise<string> {
   const config = loadConfig()
-  if (!config.apiKey) {
-    throw new Error('API_KEY_MISSING')
-  }
 
   const payload = {
     file: base64Data,
@@ -84,7 +81,8 @@ async function callOcrApi(base64Data: string): Promise<string> {
       Authorization: `token ${config.apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal
   })
 
   if (!response.ok) {
@@ -99,40 +97,27 @@ async function callOcrApi(base64Data: string): Promise<string> {
   return results[0].markdown.text
 }
 
+const ERROR_MESSAGES: Array<{ match: (msg: string) => boolean; message: string }> = [
+  { match: (msg) => msg === '已取消截图', message: '截图已取消。' },
+  { match: (msg) => msg === 'API_KEY_MISSING', message: '请先配置 API Key。' },
+  { match: (msg) => msg === 'HTTP_401' || msg === 'HTTP_403', message: 'API Key 无效，请检查配置。' },
+  { match: (msg) => msg === 'HTTP_429', message: '请求过于频繁，请稍后再试。' },
+  { match: (msg) => msg === 'EMPTY_RESULT', message: 'API 未返回识别结果。' },
+  { match: (msg) => msg.includes('network') || msg.includes('fetch') || msg.includes('Failed to fetch'), message: '网络异常，请检查网络后重试。' },
+  { match: (msg) => msg.includes('timeout') || msg.includes('timed out'), message: '识别超时，请重新截图后重试。' }
+]
+
 function classifyError(error: unknown): { status: OcrStatus; message: string } {
   const msg = error instanceof Error ? error.message : String(error)
+  for (const entry of ERROR_MESSAGES) {
+    if (entry.match(msg)) {
+      return { status: 'error', message: entry.message }
+    }
+  }
   if (msg === '已取消截图') {
     return { status: 'cancelled', message: '截图已取消。' }
   }
-  if (msg === 'API_KEY_MISSING') {
-    return { status: 'error', message: '请先配置 API Key。' }
-  }
-  if (msg === 'HTTP_401' || msg === 'HTTP_403') {
-    return { status: 'error', message: 'API Key 无效，请检查配置。' }
-  }
-  if (msg === 'HTTP_429') {
-    return { status: 'error', message: '请求过于频繁，请稍后再试。' }
-  }
-  if (msg === 'EMPTY_RESULT') {
-    return { status: 'error', message: 'API 未返回识别结果。' }
-  }
-  if (msg.includes('network') || msg.includes('fetch') || msg.includes('Failed to fetch')) {
-    return { status: 'error', message: '网络异常，请检查网络后重试。' }
-  }
-  if (msg.includes('timeout') || msg.includes('timed out')) {
-    return { status: 'error', message: '识别超时，请重新截图后重试。' }
-  }
   return { status: 'error', message: '识别过程中出现错误，可重新截图尝试。' }
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error('timeout')), ms)
-    promise.then(
-      (val) => { window.clearTimeout(timer); resolve(val) },
-      (err) => { window.clearTimeout(timer); reject(err) }
-    )
-  })
 }
 
 async function startOcr() {
@@ -143,6 +128,8 @@ async function startOcr() {
   }
 
   const currentRun = ++runId
+  const abortController = new AbortController()
+
   status.value = 'capturing'
   message.value = '请选择需要识别的屏幕区域。'
   errorMessage.value = ''
@@ -152,7 +139,7 @@ async function startOcr() {
 
   try {
     window.ztools.hideMainWindow()
-    await wait(180)
+    await wait(HIDE_WINDOW_ANIMATION_MS)
 
     const imgBase64 = await captureScreen()
     if (currentRun !== runId) return
@@ -170,7 +157,7 @@ async function startOcr() {
     const base64Data = extractBase64(imgBase64)
     const startedAt = performance.now()
 
-    const text = await withTimeout(callOcrApi(base64Data), 60000)
+    const text = await callOcrApi(base64Data, abortController.signal)
     if (currentRun !== runId) return
 
     recognizedText.value = text
@@ -180,6 +167,7 @@ async function startOcr() {
     message.value = text ? '识别结果如下。' : '未识别到文字，可重新截图尝试。'
   } catch (error) {
     window.ztools.showMainWindow()
+    if (currentRun !== runId) return
     const classified = classifyError(error)
     status.value = classified.status
     message.value = classified.message
@@ -246,7 +234,7 @@ watch(
 
       <div v-if="status === 'success'" class="stats">
         <div>
-          <strong>{{ Math.round(elapsedMs) }}ms</strong>
+          <strong>{{ elapsedMs }}ms</strong>
           <span>识别耗时</span>
         </div>
       </div>
@@ -267,28 +255,6 @@ watch(
 </template>
 
 <style scoped>
-.ocr-page {
-  min-height: 100vh;
-  box-sizing: border-box;
-  padding: 24px;
-}
-
-.ocr-card {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 24px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 48px rgba(22, 42, 80, 0.12);
-}
-
-.ocr-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
 .header-right {
   display: flex;
   align-items: center;
@@ -315,20 +281,6 @@ watch(
   color: var(--blue);
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  font-size: 28px;
-}
-
 .status-pill {
   padding: 5px 10px;
   border-radius: 999px;
@@ -351,11 +303,6 @@ h1 {
 .status-pill.cancelled {
   background: rgba(107, 114, 128, 0.14);
   color: #6b7280;
-}
-
-.message {
-  margin: 20px 0 0;
-  line-height: 1.7;
 }
 
 .error {
@@ -389,9 +336,6 @@ h1 {
 }
 
 .stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
   margin-top: 22px;
 }
 
@@ -431,18 +375,6 @@ h1 {
   white-space: pre-wrap;
 }
 
-.actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 18px;
-}
-
-.actions button {
-  min-width: 108px;
-  padding: 0 18px;
-  border-radius: 10px;
-}
-
 @keyframes progress {
   0% {
     transform: translateX(-110%);
@@ -454,34 +386,12 @@ h1 {
 }
 
 @media (max-width: 640px) {
-  .ocr-page {
-    padding: 14px;
-  }
-
-  .ocr-card {
-    padding: 18px;
-  }
-
-  .ocr-header,
-  .actions {
-    flex-direction: column;
-  }
-
   .stats {
     grid-template-columns: 1fr;
-  }
-
-  .actions button {
-    width: 100%;
   }
 }
 
 @media (prefers-color-scheme: dark) {
-  .ocr-card {
-    background: rgba(43, 45, 49, 0.94);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
-  }
-
   .stats span {
     color: #c4c7cc;
   }
