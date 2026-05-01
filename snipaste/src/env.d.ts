@@ -7,9 +7,14 @@ declare module '*.vue' {
   export default component
 }
 
+interface SnipasteSaveResult {
+  ok: boolean
+  error?: string
+}
+
 declare global {
   interface Window {
-    snipasteSaveImage(base64: string, filePath: string): boolean
+    snipasteSaveImage(base64: string, filePath: string): SnipasteSaveResult
   }
 }
 

@@ -90,14 +90,14 @@ async function saveImage() {
   const filePath = await Promise.resolve(result)
   if (typeof filePath !== 'string' || !filePath) return
   try {
-    const ok = window.snipasteSaveImage(imgBase64.value, filePath)
-    if (ok) {
+    const res = window.snipasteSaveImage(imgBase64.value, filePath)
+    if (res.ok) {
       window.ztools.showNotification('截图已保存', '截图贴图')
     } else {
-      window.ztools.showNotification('保存失败', '截图贴图')
+      window.ztools.showNotification(`保存失败: ${res.error || '未知错误'}`, '截图贴图')
     }
-  } catch {
-    window.ztools.showNotification('保存失败', '截图贴图')
+  } catch (e) {
+    window.ztools.showNotification(`保存失败: ${e instanceof Error ? e.message : '未知错误'}`, '截图贴图')
   }
 }
 
