@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
+  "name": "mineru",
+  "title": "MinerU PDF 解析",
+  "description": "上传 PDF 文件，调用 MinerU 远程接口解析为 Markdown",
+  "author": "She1ry",
+  "version": "1.0.0",
+  "main": "index.html",
+  "preload": "preload.js",
+  "logo": "logo.png",
+  "development": {
+    "main": "http://localhost:5173"
+  },
+  "features": [
+    {
+      "code": "mineru",
+      "explain": "MinerU PDF 解析",
+      "icon": "logo.png",
+      "mainHide": false,
+      "cmds": [
+        "mineru",
+        "pdf解析",
+        "markdown解析"
+      ]
+    }
+  ]
+}

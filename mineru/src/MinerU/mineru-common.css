@@ -1,0 +1,70 @@
+.mineru-page {
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mineru-card {
+  flex: 1;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 36px rgba(22, 42, 80, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mineru-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mineru-card h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.message {
+  margin: 10px 0 0;
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .mineru-page {
+    padding: 10px;
+  }
+
+  .mineru-card {
+    padding: 14px;
+  }
+
+  .mineru-card h1 {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .mineru-card {
+    background: rgba(43, 45, 49, 0.94);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+  }
+}
