@@ -104,3 +104,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: fix(mineru): preload PRELOAD_NOT_AVAILABLE
+
+**Date**: 2026-05-02
+**Task**: fix(mineru): preload PRELOAD_NOT_AVAILABLE
+**Branch**: `main`
+
+### Summary
+
+修复 mineru 插件 preload.js 使用 contextBridge.exposeInMainWorld() 导致渲染进程无法访问 window.mineruSaveFile 的问题。ZTools preload 环境不支持 contextBridge，改为直接 window 赋值。版本 1.0.0 → 1.0.1
+
+### Main Changes
+
+- `mineru/public/preload.js`: 移除 `contextBridge` 导入和调用，改为 `window.mineruSaveFile = {...}`
+- `mineru/dist/preload.js`: 同步构建产物
+- 版本号 1.0.0 → 1.0.1
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dd428b0` | fix(mineru): replace contextBridge with direct window assignment in preload |
+
+### Testing
+
+- [OK] `vue-tsc && vite build` 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
