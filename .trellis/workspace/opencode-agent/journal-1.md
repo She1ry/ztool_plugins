@@ -71,3 +71,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: MinerU PDF 解析插件开发
+
+**Date**: 2026-05-02
+**Task**: MinerU PDF 解析插件开发
+**Branch**: `main`
+
+### Summary
+
+新建 mineru 插件：上传 PDF 调用远程接口解析为 Markdown，支持复制和保存到本地，API 层抽象便于切换供应商，API Key 可配置，UI 友好含拖拽支持、进度条、深色模式。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `335ebc3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
