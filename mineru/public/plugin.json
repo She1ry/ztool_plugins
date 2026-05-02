@@ -4,7 +4,7 @@
   "title": "MinerU PDF 解析",
   "description": "上传 PDF 文件，调用 MinerU 远程接口解析为 Markdown",
   "author": "She1ry",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "index.html",
   "preload": "preload.js",
   "logo": "logo.png",
