@@ -13,5 +13,9 @@ window.mineruSaveFile = {
   readFileBase64: (filePath) => {
     const buffer = fs.readFileSync(filePath)
     return buffer.toString('base64')
+  },
+  readFileBuffer: (filePath) => {
+    const buffer = fs.readFileSync(filePath)
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
   }
 }

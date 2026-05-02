@@ -80,24 +80,32 @@ async function selectAndParsePdf() {
   const filePath = Array.isArray(result) ? result[0] : result
   fileName.value = filePath.split(/[/\\]/).pop() || 'document.pdf'
 
+  if (!window.mineruSaveFile) {
+    status.value = 'error'
+    message.value = classifyErrorMessage(new Error('PRELOAD_NOT_AVAILABLE'))
+    errorMessage.value = 'PRELOAD_NOT_AVAILABLE'
+    return
+  }
+
   try {
     status.value = 'uploading'
     message.value = `正在读取文件：${fileName.value}`
-    progress.value = 20
 
-    let base64Data: string
-    if (window.mineruSaveFile) {
-      base64Data = window.mineruSaveFile.readFileBase64(filePath)
-    } else {
-      throw new Error('PRELOAD_NOT_AVAILABLE')
-    }
+    const fileBuffer = window.mineruSaveFile.readFileBuffer(filePath)
 
     status.value = 'parsing'
-    message.value = '正在调用远程接口解析，请稍候…'
-    progress.value = 50
+    message.value = '正在上传并解析，请稍候…'
 
     const startedAt = performance.now()
-    const result = await callExtractApi(base64Data, fileName.value, config)
+    const result = await callExtractApi(
+      fileBuffer,
+      fileName.value,
+      config,
+      (p, msg) => {
+        progress.value = p
+        message.value = msg
+      }
+    )
 
     markdownText.value = result.markdown
     elapsedMs.value = Math.round(performance.now() - startedAt)
@@ -119,9 +127,11 @@ function classifyErrorMessage(error: unknown): string {
   if (msg === 'HTTP_429') return '请求过于频繁，请稍后再试。'
   if (msg === 'HTTP_413') return '文件过大，请选择较小的 PDF。'
   if (msg === 'EMPTY_RESULT') return '接口未返回解析结果，请检查文件格式。'
+  if (msg === 'POLL_TIMEOUT') return '解析超时，请重试或稍后查询。'
+  if (msg.startsWith('API_ERROR_')) return `接口错误（${msg}），请检查配置或稍后重试。`
   if (msg.includes('network') || msg.includes('fetch') || msg.includes('Failed to fetch')) return '网络异常，请检查网络后重试。'
   if (msg.includes('timeout') || msg.includes('timed out')) return '解析超时，请重试。'
-  return '解析过程中出现错误，可重试。'
+  return msg || '解析过程中出现错误，可重试。'
 }
 
 function copyMarkdown() {
@@ -168,6 +178,15 @@ function handleFileDrop(e: DragEvent) {
   parseDroppedFile(file)
 }
 
+async function fileBufferFromFile(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.onerror = () => reject(new Error('FILE_READ_ERROR'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
 function parseDroppedFile(file: File) {
   const config = loadConfig()
 
@@ -181,14 +200,21 @@ function parseDroppedFile(file: File) {
 
   wait(30).then(async () => {
     try {
-      const base64Data = await readFileBase64(file)
+      const fileBuffer = await fileBufferFromFile(file)
 
       status.value = 'parsing'
-      message.value = '正在调用远程接口解析，请稍候…'
-      progress.value = 50
+      message.value = '正在上传并解析，请稍候…'
 
       const startedAt = performance.now()
-      const result = await callExtractApi(base64Data, file.name, config)
+      const result = await callExtractApi(
+        fileBuffer,
+        file.name,
+        config,
+        (p, msg) => {
+          progress.value = p
+          message.value = msg
+        }
+      )
 
       markdownText.value = result.markdown
       elapsedMs.value = Math.round(performance.now() - startedAt)
